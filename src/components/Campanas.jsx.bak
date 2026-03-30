@@ -1,0 +1,579 @@
+import { useState, useEffect } from 'react'
+
+const API = 'https://webhook.polonia-marketing.uk'
+
+const OBJETIVOS = [
+  { value: 'cierre', label: 'Cierre de venta' },
+  { value: 'agendar', label: 'Agendar reunión' },
+  { value: 'lead', label: 'Capturar lead' },
+  { value: 'info', label: 'Informar' },
+]
+
+export default function Campanas() {
+  const [clientes, setClientes] = useState([])
+  const [clienteId, setClienteId] = useState('')
+  const [campanas, setCampanas] = useState([])
+  const [modo, setModo] = useState('lista') // lista | nueva
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [productos, setProductos] = useState([{ nombre: '', precio: '', descripcion: '' }])
+  const [form, setForm] = useState({
+    nombre: '', descripcion: '', objetivo: 'agendar',
+    tono: 'profesional y amigable', cta: '', horario_atencion: 'Lunes-Viernes 9:00-18:00'
+  })
+
+  useEffect(() => {
+    fetch(`${API}/clientes`).then(r => r.json()).then(d => {
+      setClientes(d.clientes || [])
+      if (d.clientes?.length > 0) setClienteId(d.clientes[0].id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!clienteId) return
+    fetch(`${API}/campanas/${clienteId}`).then(r => r.json()).then(d => setCampanas(d.campanas || []))
+  }, [clienteId])
+
+  const agregarProducto = () => setProductos([...productos, { nombre: '', precio: '', descripcion: '' }])
+  const removeProducto = (i) => setProductos(productos.filter((_, idx) => idx !== i))
+  const updateProducto = (i, field, val) => {
+    const updated = [...productos]
+    updated[i][field] = val
+    setProductos(updated)
+  }
+
+  const guardar = async () => {
+    if (!form.nombre || !clienteId) return setMsg('❌ Nombre y cliente son requeridos')
+    setSaving(true)
+    setMsg('')
+    try {
+      const r = await fetch(`${API}/entrenar-campana`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          datos_campana: { ...form, productos: productos.filter(p => p.nombre) }
+        })
+      })
+      const d = await r.json()
+      if (d.ok) {
+        setMsg('✅ Campaña guardada. Sierra ya usa este contexto.')
+        setModo('lista')
+        fetch(`${API}/campanas/${clienteId}`).then(r => r.json()).then(d => setCampanas(d.campanas || []))
+        setForm({ nombre: '', descripcion: '', objetivo: 'agendar', tono: 'profesional y amigable', cta: '', horario_atencion: 'Lunes-Viernes 9:00-18:00' })
+        setProductos([{ nombre: '', precio: '', descripcion: '' }])
+      } else {
+        setMsg(`❌ Error: ${d.error}`)
+      }
+    } catch (e) { setMsg(`❌ ${e.message}`) }
+    setSaving(false)
+  }
+
+  const input = (label, key, placeholder = '', textarea = false) => (
+    <div style={{ marginBottom: '16px' }}>
+      <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>{label}</label>
+      {textarea
+        ? <textarea value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} rows={3} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box' }} />
+        : <input value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px', boxSizing: 'border-box' }} />
+      }
+    </div>
+  )
+
+  return (
+    <div>
+      <div style={{ marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '4px' }}>Campañas IA</h1>
+          <p style={{ color: 'var(--text2)', fontSize: '14px' }}>Entrena a Sierra con el contexto de cada cliente</p>
+        </div>
+        <button onClick={() => setModo(modo === 'nueva' ? 'lista' : 'nueva')} style={{
+          padding: '10px 20px', background: 'var(--accent)', color: '#fff', border: 'none',
+          borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '14px'
+        }}>
+          {modo === 'nueva' ? '← Volver' : '+ Nueva Campaña'}
+        </button>
+      </div>
+
+      {/* Selector cliente */}
+      <div style={{ marginBottom: '24px' }}>
+        <select value={clienteId} onChange={e => setClienteId(e.target.value)} style={{
+          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px',
+          padding: '10px 16px', color: 'var(--text1)', fontSize: '14px', cursor: 'pointer'
+        }}>
+          {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+      </div>
+
+      {msg && <div style={{ padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', background: msg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${msg.startsWith('✅') ? 'var(--green)' : 'var(--red)'}`, fontSize: '14px' }}>{msg}</div>}
+
+      {modo === 'lista' && (
+        <div>
+          {campanas.length === 0
+            ? <div style={{ color: 'var(--text3)', fontSize: '14px', padding: '40px 0' }}>No hay campañas para este cliente. Crea la primera.</div>
+            : campanas.map(c => (
+              <div key={c.id} style={{ background: 'var(--bg2)', border: `1px solid ${c.activa ? 'var(--green)' : 'var(--border)'}`, borderRadius: '12px', padding: '20px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '4px' }}>{c.nombre}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '8px' }}>{c.descripcion}</div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.1)', color: 'var(--accent)', padding: '3px 8px', borderRadius: '4px' }}>{c.objetivo}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text3)', fontFamily: 'Space Mono' }}>{c.tono}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text3)' }}>{c.horario_atencion}</span>
+                    </div>
+                  </div>
+                  {c.activa && <span style={{ fontSize: '11px', background: 'rgba(34,197,94,0.1)', color: 'var(--green)', padding: '4px 10px', borderRadius: '20px', fontWeight: 700 }}>ACTIVA</span>}
+                </div>
+                {c.productos?.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '6px' }}>PRODUCTOS</div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {c.productos.map((p, i) => (
+                        <span key={i} style={{ fontSize: '12px', background: 'var(--bg1)', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px' }}>
+                          {p.nombre} {p.precio && `· ${p.precio}`}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {modo === 'nueva' && (
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '12px', padding: '28px' }}>
+          <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '24px' }}>Nueva Campaña para Sierra</div>
+
+          {input('Nombre de la campaña', 'nombre', 'Ej: Clan Automotriz - Abril 2026')}
+          {input('Descripción del negocio', 'descripcion', 'Qué vende, a quién, dónde...', true)}
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>Objetivo de Sierra</label>
+            <select value={form.objetivo} onChange={e => setForm({ ...form, objetivo: e.target.value })} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px' }}>
+              {OBJETIVOS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+
+          {input('Tono de voz', 'tono', 'Ej: profesional y urgente')}
+          {input('Call to Action', 'cta', 'Ej: Agenda tu prueba de manejo gratis')}
+          {input('Horario de atención', 'horario_atencion', 'Ej: Lunes-Sábado 9:00-19:00')}
+
+          {/* Productos */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px' }}>Productos / Servicios</label>
+              <button onClick={agregarProducto} style={{ fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>+ Agregar</button>
+            </div>
+            {productos.map((p, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr auto', gap: '8px', marginBottom: '8px' }}>
+                <input placeholder="Nombre" value={p.nombre} onChange={e => updateProducto(i, 'nombre', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <input placeholder="Precio" value={p.precio} onChange={e => updateProducto(i, 'precio', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <input placeholder="Descripción" value={p.descripcion} onChange={e => updateProducto(i, 'descripcion', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <button onClick={() => removeProducto(i)} style={{ background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px', color: 'var(--red)', cursor: 'pointer', padding: '0 10px', fontSize: '16px' }}>×</button>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={guardar} disabled={saving} style={{
+            width: '100%', padding: '14px', background: saving ? 'var(--border)' : 'var(--accent)',
+            color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '15px',
+            cursor: saving ? 'not-allowed' : 'pointer'
+          }}>
+            {saving ? 'Guardando...' : '🚀 Guardar y Activar Campaña'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+import { useState, useEffect } from 'react'
+
+const API = 'https://webhook.polonia-marketing.uk'
+
+const OBJETIVOS = [
+  { value: 'cierre', label: 'Cierre de venta' },
+  { value: 'agendar', label: 'Agendar reunión' },
+  { value: 'lead', label: 'Capturar lead' },
+  { value: 'info', label: 'Informar' },
+]
+
+function ScoreBadge({ score, veredicto }) {
+  if (score === null || score === undefined) return null
+  const color = score >= 70 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444'
+  const bg = score >= 70 ? 'rgba(34,197,94,0.1)' : score >= 50 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)'
+  const label = score >= 70 ? 'LANZAR' : score >= 50 ? 'AJUSTAR' : 'NO LANZAR'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{
+        background: bg, border: `1px solid ${color}`, borderRadius: '8px',
+        padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px'
+      }}>
+        <div style={{ position: 'relative', width: '36px', height: '36px' }}>
+          <svg width="36" height="36" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" strokeWidth="3"/>
+            <circle cx="18" cy="18" r="15" fill="none" stroke={color} strokeWidth="3"
+              strokeDasharray={`${(score / 100) * 94} 94`}
+              strokeLinecap="round"
+              transform="rotate(-90 18 18)"
+            />
+          </svg>
+          <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 700, color }}>{score}</span>
+        </div>
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: 700, color }}>{label}</div>
+          <div style={{ fontSize: '10px', color: 'var(--text3)' }}>MiroFish</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SimulacionDetalle({ sim }) {
+  const [open, setOpen] = useState(false)
+  if (!sim) return null
+  return (
+    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: open ? '12px' : 0 }}>
+        <span style={{ fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px' }}>Simulación MiroFish</span>
+        <button onClick={() => setOpen(!open)} style={{ fontSize: '11px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+          {open ? '▲ Ocultar' : '▼ Ver detalle'}
+        </button>
+      </div>
+      {open && (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ background: 'var(--bg1)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '3px' }}>FORTALEZA</div>
+              <div style={{ fontSize: '12px', color: 'var(--text1)' }}>{sim.fortaleza_principal}</div>
+            </div>
+            <div style={{ background: 'var(--bg1)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '3px' }}>OBJECIÓN PRINCIPAL</div>
+              <div style={{ fontSize: '12px', color: 'var(--text1)' }}>{sim.objecion_principal}</div>
+            </div>
+            <div style={{ background: 'var(--bg1)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '3px' }}>MEJORA COPY</div>
+              <div style={{ fontSize: '12px', color: 'var(--text1)' }}>{sim.recomendacion_copy}</div>
+            </div>
+            <div style={{ background: 'var(--bg1)', borderRadius: '8px', padding: '10px 12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text3)', marginBottom: '3px' }}>MEJORA CTA</div>
+              <div style={{ fontSize: '12px', color: 'var(--text1)' }}>{sim.recomendacion_cta}</div>
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg1)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: 'var(--text2)', fontStyle: 'italic' }}>
+            {sim.razon_veredicto}
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text3)' }}>CTR estimado: <b style={{ color: 'var(--text1)' }}>{sim.tasa_click_estimada}%</b></span>
+            <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Positivos: <b style={{ color: '#22c55e' }}>{sim.leads_positivos}</b></span>
+            <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Negativos: <b style={{ color: '#ef4444' }}>{sim.leads_negativos}</b></span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Campanas() {
+  const [clientes, setClientes] = useState([])
+  const [clienteId, setClienteId] = useState('')
+  const [campanas, setCampanas] = useState([])
+  const [simulaciones, setSimulaciones] = useState({})
+  const [modo, setModo] = useState('lista')
+  const [saving, setSaving] = useState(false)
+  const [simulando, setSimulando] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [productos, setProductos] = useState([{ nombre: '', precio: '', descripcion: '' }])
+  const [usarMiroFish, setUsarMiroFish] = useState(true)
+  const [form, setForm] = useState({
+    nombre: '', descripcion: '', objetivo: 'agendar',
+    tono: 'profesional y amigable', cta: '', horario_atencion: 'Lunes-Viernes 9:00-18:00'
+  })
+  const [creativo, setCreativo] = useState({
+    copy: '', cta: '', imagen_desc: '', segmento: ''
+  })
+
+  useEffect(() => {
+    fetch(`${API}/clientes`).then(r => r.json()).then(d => {
+      setClientes(d.clientes || [])
+      if (d.clientes?.length > 0) setClienteId(d.clientes[0].id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!clienteId) return
+    fetch(`${API}/campanas/${clienteId}`).then(r => r.json()).then(d => {
+      const camps = d.campanas || []
+      setCampanas(camps)
+      // Cargar simulaciones para campañas con simulacion_id
+      camps.forEach(c => {
+        if (c.simulacion_id && !simulaciones[c.id]) {
+          fetch(`${API}/simular/historial/${clienteId}`)
+            .then(r => r.json())
+            .then(sd => {
+              const map = {}
+              ;(sd.simulaciones || []).forEach(s => {
+                if (s.campana_id) map[s.campana_id] = s.analisis
+              })
+              setSimulaciones(map)
+            })
+        }
+      })
+    })
+  }, [clienteId])
+
+  const agregarProducto = () => setProductos([...productos, { nombre: '', precio: '', descripcion: '' }])
+  const removeProducto = (i) => setProductos(productos.filter((_, idx) => idx !== i))
+  const updateProducto = (i, field, val) => {
+    const updated = [...productos]
+    updated[i][field] = val
+    setProductos(updated)
+  }
+
+  const pollSimulacion = async (campanaId, intentos = 0) => {
+    if (intentos > 12) return // máx 60 segundos
+    await new Promise(r => setTimeout(r, 5000))
+    const d = await fetch(`${API}/campanas/${clienteId}`).then(r => r.json())
+    const camp = (d.campanas || []).find(c => c.id === campanaId)
+    if (camp?.simulacion_score !== null && camp?.simulacion_score !== undefined) {
+      setCampanas(d.campanas || [])
+      // Cargar detalle
+      const sd = await fetch(`${API}/simular/historial/${clienteId}`).then(r => r.json())
+      const map = { ...simulaciones }
+      ;(sd.simulaciones || []).forEach(s => {
+        if (s.campana_id) map[s.campana_id] = s.analisis
+      })
+      setSimulaciones(map)
+      setSimulando(false)
+      const score = camp.simulacion_score
+      setMsg(`✅ Campaña guardada. MiroFish score: ${score}/100 — ${score >= 70 ? '🟢 Lista para lanzar' : score >= 50 ? '🟡 Ajustar antes de lanzar' : '🔴 Necesita cambios'}`)
+    } else {
+      pollSimulacion(campanaId, intentos + 1)
+    }
+  }
+
+  const guardar = async () => {
+    if (!form.nombre || !clienteId) return setMsg('❌ Nombre y cliente son requeridos')
+    setSaving(true)
+    setMsg('')
+    try {
+      const body = {
+        cliente_id: clienteId,
+        datos_campana: { ...form, productos: productos.filter(p => p.nombre) }
+      }
+      if (usarMiroFish && creativo.copy && creativo.cta) {
+        body.creativo = creativo
+      }
+      const r = await fetch(`${API}/entrenar-campana`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const d = await r.json()
+      if (d.ok) {
+        setModo('lista')
+        fetch(`${API}/campanas/${clienteId}`).then(r => r.json()).then(d => setCampanas(d.campanas || []))
+        setForm({ nombre: '', descripcion: '', objetivo: 'agendar', tono: 'profesional y amigable', cta: '', horario_atencion: 'Lunes-Viernes 9:00-18:00' })
+        setProductos([{ nombre: '', precio: '', descripcion: '' }])
+        setCreativo({ copy: '', cta: '', imagen_desc: '', segmento: '' })
+        if (d.simulacion === 'en_proceso') {
+          setSimulando(true)
+          setMsg('✅ Campaña guardada. MiroFish simulando... (~30 seg)')
+          pollSimulacion(d.campana.id)
+        } else {
+          setMsg('✅ Campaña guardada. Sierra ya usa este contexto.')
+        }
+      } else {
+        setMsg(`❌ Error: ${d.error}`)
+      }
+    } catch (e) { setMsg(`❌ ${e.message}`) }
+    setSaving(false)
+  }
+
+  const input = (label, key, placeholder = '', textarea = false, obj = null, setObj = null) => (
+    <div style={{ marginBottom: '16px' }}>
+      <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>{label}</label>
+      {textarea
+        ? <textarea value={obj ? obj[key] : form[key]} onChange={e => obj ? setObj({ ...obj, [key]: e.target.value }) : setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} rows={3} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box' }} />
+        : <input value={obj ? obj[key] : form[key]} onChange={e => obj ? setObj({ ...obj, [key]: e.target.value }) : setForm({ ...form, [key]: e.target.value })} placeholder={placeholder} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px', boxSizing: 'border-box' }} />
+      }
+    </div>
+  )
+
+  return (
+    <div>
+      <div style={{ marginBottom: '28px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1 style={{ fontSize: '26px', fontWeight: 800, marginBottom: '4px' }}>Campañas IA</h1>
+          <p style={{ color: 'var(--text2)', fontSize: '14px' }}>Entrena a Sierra + simula con MiroFish antes de lanzar</p>
+        </div>
+        <button onClick={() => setModo(modo === 'nueva' ? 'lista' : 'nueva')} style={{
+          padding: '10px 20px', background: 'var(--accent)', color: '#fff', border: 'none',
+          borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '14px'
+        }}>
+          {modo === 'nueva' ? '← Volver' : '+ Nueva Campaña'}
+        </button>
+      </div>
+
+      <div style={{ marginBottom: '24px' }}>
+        <select value={clienteId} onChange={e => setClienteId(e.target.value)} style={{
+          background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '8px',
+          padding: '10px 16px', color: 'var(--text1)', fontSize: '14px', cursor: 'pointer'
+        }}>
+          {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        </select>
+      </div>
+
+      {msg && (
+        <div style={{
+          padding: '12px 16px', borderRadius: '8px', marginBottom: '20px',
+          background: msg.startsWith('✅') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          border: `1px solid ${msg.startsWith('✅') ? 'var(--green)' : 'var(--red)'}`,
+          fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          {simulando && <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: '16px' }}>⟳</span>}
+          {msg}
+        </div>
+      )}
+
+      {modo === 'lista' && (
+        <div>
+          {campanas.length === 0
+            ? <div style={{ color: 'var(--text3)', fontSize: '14px', padding: '40px 0' }}>No hay campañas. Crea la primera.</div>
+            : campanas.map(c => (
+              <div key={c.id} style={{
+                background: 'var(--bg2)',
+                border: `1px solid ${c.activa ? 'var(--green)' : 'var(--border)'}`,
+                borderRadius: '12px', padding: '20px', marginBottom: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '4px' }}>{c.nombre}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '8px' }}>{c.descripcion}</div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '11px', background: 'rgba(249,115,22,0.1)', color: 'var(--accent)', padding: '3px 8px', borderRadius: '4px' }}>{c.objetivo}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text3)', fontFamily: 'Space Mono' }}>{c.tono}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                    {c.activa && <span style={{ fontSize: '11px', background: 'rgba(34,197,94,0.1)', color: 'var(--green)', padding: '4px 10px', borderRadius: '20px', fontWeight: 700 }}>ACTIVA</span>}
+                    <ScoreBadge score={c.simulacion_score} veredicto={c.simulacion_veredicto} />
+                  </div>
+                </div>
+
+                {c.productos?.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '6px' }}>PRODUCTOS</div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {c.productos.map((p, i) => (
+                        <span key={i} style={{ fontSize: '12px', background: 'var(--bg1)', border: '1px solid var(--border)', padding: '4px 10px', borderRadius: '6px' }}>
+                          {p.nombre} {p.precio && `· ${p.precio}`}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <SimulacionDetalle sim={simulaciones[c.id]} />
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {modo === 'nueva' && (
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: '12px', padding: '28px' }}>
+          <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '24px' }}>Nueva Campaña para Sierra</div>
+
+          {input('Nombre de la campaña', 'nombre', 'Ej: Clan Automotriz - Abril 2026')}
+          {input('Descripción del negocio', 'descripcion', 'Qué vende, a quién, dónde...', true)}
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '6px' }}>Objetivo de Sierra</label>
+            <select value={form.objetivo} onChange={e => setForm({ ...form, objetivo: e.target.value })} style={{ width: '100%', background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', color: 'var(--text1)', fontSize: '14px' }}>
+              {OBJETIVOS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+
+          {input('Tono de voz', 'tono', 'Ej: profesional y urgente')}
+          {input('Call to Action de Sierra', 'cta', 'Ej: Agenda tu prueba de manejo gratis')}
+          {input('Horario de atención', 'horario_atencion', 'Ej: Lunes-Sábado 9:00-19:00')}
+
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <label style={{ fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '1px' }}>Productos / Servicios</label>
+              <button onClick={agregarProducto} style={{ fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>+ Agregar</button>
+            </div>
+            {productos.map((p, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr auto', gap: '8px', marginBottom: '8px' }}>
+                <input placeholder="Nombre" value={p.nombre} onChange={e => updateProducto(i, 'nombre', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <input placeholder="Precio" value={p.precio} onChange={e => updateProducto(i, 'precio', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <input placeholder="Descripción" value={p.descripcion} onChange={e => updateProducto(i, 'descripcion', e.target.value)} style={{ background: 'var(--bg1)', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 12px', color: 'var(--text1)', fontSize: '13px' }} />
+                <button onClick={() => removeProducto(i)} style={{ background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '6px', color: 'var(--red)', cursor: 'pointer', padding: '0 10px', fontSize: '16px' }}>×</button>
+              </div>
+            ))}
+          </div>
+
+          {/* SECCIÓN MIROFISH */}
+          <div style={{ marginBottom: '24px', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{
+              padding: '14px 20px', background: 'rgba(249,115,22,0.05)',
+              borderBottom: usarMiroFish ? '1px solid var(--border)' : 'none',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '14px' }}>🐟 Simulación MiroFish</div>
+                <div style={{ fontSize: '12px', color: 'var(--text3)' }}>Predice el rendimiento del creativo antes de lanzar a Meta</div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text2)' }}>{usarMiroFish ? 'Activado' : 'Desactivado'}</span>
+                <div onClick={() => setUsarMiroFish(!usarMiroFish)} style={{
+                  width: '40px', height: '22px', borderRadius: '11px', cursor: 'pointer',
+                  background: usarMiroFish ? 'var(--accent)' : 'var(--border)',
+                  position: 'relative', transition: 'background 0.2s'
+                }}>
+                  <div style={{
+                    position: 'absolute', top: '3px', left: usarMiroFish ? '21px' : '3px',
+                    width: '16px', height: '16px', borderRadius: '50%', background: '#fff',
+                    transition: 'left 0.2s'
+                  }} />
+                </div>
+              </label>
+            </div>
+
+            {usarMiroFish && (
+              <div style={{ padding: '20px' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '16px' }}>
+                  6 agentes IA (lead frío, tibio, caliente, objeción precio, desconfiado, crítico) reaccionarán a tu creativo.
+                </div>
+                {input('Copy del anuncio', 'copy', 'Texto exacto del anuncio de Facebook/Instagram...', true, creativo, setCreativo)}
+                {input('CTA del anuncio', 'cta', 'Ej: Cotiza ahora, Escríbenos, Ver oferta', false, creativo, setCreativo)}
+                {input('Descripción de la imagen', 'imagen_desc', 'Ej: Hilux en camino de tierra al amanecer...', false, creativo, setCreativo)}
+                {input('Segmento objetivo', 'segmento', 'Ej: Hombres 30-55, empresarios, Trujillo', false, creativo, setCreativo)}
+                {(!creativo.copy || !creativo.cta) && (
+                  <div style={{ fontSize: '12px', color: 'var(--text3)', padding: '8px 12px', background: 'var(--bg1)', borderRadius: '6px' }}>
+                    ⚠️ Copy y CTA son requeridos para simular. Si los dejas vacíos, se guarda sin simular.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <button onClick={guardar} disabled={saving} style={{
+            width: '100%', padding: '14px',
+            background: saving ? 'var(--border)' : 'var(--accent)',
+            color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, fontSize: '15px',
+            cursor: saving ? 'not-allowed' : 'pointer'
+          }}>
+            {saving ? 'Guardando...' : usarMiroFish && creativo.copy && creativo.cta ? '🐟 Guardar + Simular con MiroFish' : '🚀 Guardar y Activar Campaña'}
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
+    </div>
+  )
+}
